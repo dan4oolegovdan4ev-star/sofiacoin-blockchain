@@ -7,7 +7,7 @@ const path = require("path");
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static('frontend'));
+app.use(express.static(__dirname)); // serve files from root
 
 const PORT = process.env.PORT || 3000;
 
@@ -124,6 +124,6 @@ app.get("/chain",(req,res)=>res.json(chain));
 app.get("/balance/:wallet",(req,res)=>res.json({balance:balances[req.params.wallet]||0}));
 app.get("/stats",(req,res)=>res.json({blocks:chain.length,supply:totalSupply,difficulty:DIFFICULTY,miningStats,mined24h}));
 
-app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'frontend','index.html')));
+app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'index.html')));
 
 app.listen(PORT,()=>console.log("SofiaCoin backend running on port",PORT));
