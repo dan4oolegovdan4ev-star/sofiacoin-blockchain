@@ -9,7 +9,6 @@ app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
-const CREATOR_WALLET = "SOFIACOIN_CREATOR";
 const MAX_SUPPLY = 100000000;
 const BLOCK_REWARD = 1;
 let DIFFICULTY = 4;
@@ -19,147 +18,142 @@ let mempool = [];
 let balances = {};
 let totalSupply = 0;
 
-function hash(data) {
+function sha256(data){
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 
-function createGenesisBlock() {
+/* ---------- CRYPTO ---------- */
+
+function verifySignature(publicKey, message, signature){
+  const verify = crypto.createVerify("SHA256");
+  verify.update(message);
+  verify.end();
+  return verify.verify(publicKey, signature, "hex");
+}
+
+/* ---------- BLOCKCHAIN ---------- */
+
+function createGenesisBlock(){
   return {
-    index: 0,
-    prevHash: "0",
-    timestamp: Date.now(),
-    transactions: [],
-    nonce: 0,
-    hash: hash("genesis")
+    index:0,
+    prevHash:"0",
+    timestamp:Date.now(),
+    transactions:[],
+    nonce:0,
+    hash:sha256("genesis")
   };
 }
 
 chain.push(createGenesisBlock());
 
-function getLastBlock() {
-  return chain[chain.length - 1];
+function getLastBlock(){
+  return chain[chain.length-1];
 }
 
-function mineBlock(miner) {
-  if (totalSupply >= MAX_SUPPLY) return null;
+function mineBlock(miner){
+  if(totalSupply >= MAX_SUPPLY) return null;
 
   let last = getLastBlock();
   let nonce = 0;
   let timestamp = Date.now();
   let txs = [...mempool];
 
-  let reward = BLOCK_REWARD;
-  let creatorFee = reward * 0.01;
-  reward -= creatorFee;
+  // reward
+  txs.push({from:"SYSTEM", to:miner, amount:BLOCK_REWARD});
 
-  txs.push({
-    from: "SYSTEM",
-    to: miner,
-    amount: reward
-  });
-
-  txs.push({
-    from: "SYSTEM",
-    to: CREATOR_WALLET,
-    amount: creatorFee
-  });
-
-  let hashVal = "";
-
-  while (true) {
-    hashVal = hash(
-      last.hash +
-      timestamp +
-      JSON.stringify(txs) +
-      nonce
+  let hashVal="";
+  while(true){
+    hashVal = sha256(
+      last.hash + timestamp + JSON.stringify(txs) + nonce
     );
-
-    if (hashVal.startsWith("0".repeat(DIFFICULTY))) break;
-
+    if(hashVal.startsWith("0".repeat(DIFFICULTY))) break;
     nonce++;
   }
 
   let block = {
-    index: chain.length,
-    prevHash: last.hash,
+    index:chain.length,
+    prevHash:last.hash,
     timestamp,
-    transactions: txs,
+    transactions:txs,
     nonce,
-    hash: hashVal
+    hash:hashVal
   };
 
   applyTransactions(txs);
   chain.push(block);
   mempool = [];
-
   totalSupply += BLOCK_REWARD;
 
-  adjustDifficulty();
+  if(chain.length % 5 === 0) DIFFICULTY++;
+
   return block;
 }
 
-function applyTransactions(txs) {
-  for (let tx of txs) {
-    if (!balances[tx.from]) balances[tx.from] = 0;
-    if (!balances[tx.to]) balances[tx.to] = 0;
+function applyTransactions(txs){
+  for(let tx of txs){
+    if(!balances[tx.from]) balances[tx.from]=0;
+    if(!balances[tx.to]) balances[tx.to]=0;
 
-    if (tx.from !== "SYSTEM") {
+    if(tx.from !== "SYSTEM"){
       balances[tx.from] -= tx.amount;
     }
-
     balances[tx.to] += tx.amount;
   }
 }
 
-function adjustDifficulty() {
-  if (chain.length % 5 === 0) {
-    DIFFICULTY++;
-  }
-}
+/* ---------- API ---------- */
 
-app.post("/transaction", (req, res) => {
-  const { from, to, amount } = req.body;
+// create transaction
+app.post("/transaction",(req,res)=>{
+  const {from,to,amount,signature,publicKey} = req.body;
 
-  if (!from || !to || !amount) {
-    return res.json({ error: "Invalid transaction" });
+  if(!from || !to || !amount || !signature || !publicKey){
+    return res.json({error:"Invalid transaction data"});
   }
 
-  if ((balances[from] || 0) < amount) {
-    return res.json({ error: "Insufficient funds" });
+  const message = from + to + amount;
+
+  const valid = verifySignature(publicKey,message,signature);
+  if(!valid){
+    return res.json({error:"Invalid signature"});
   }
 
-  mempool.push({ from, to, amount });
-  res.json({ success: true });
+  if((balances[from]||0) < amount){
+    return res.json({error:"Insufficient funds"});
+  }
+
+  mempool.push({from,to,amount});
+  res.json({success:true});
 });
 
-app.post("/mine", (req, res) => {
-  const { miner } = req.body;
-
-  if (!miner) return res.json({ error: "Missing miner" });
-
-  let block = mineBlock(miner);
-  if (!block) return res.json({ error: "Max supply reached" });
-
-  res.json({ success: true, block });
+// mining
+app.post("/mine",(req,res)=>{
+  const {miner} = req.body;
+  if(!miner) return res.json({error:"Missing miner"});
+  const block = mineBlock(miner);
+  if(!block) return res.json({error:"Max supply reached"});
+  res.json({success:true,block});
 });
 
-app.get("/chain", (req, res) => {
+// chain
+app.get("/chain",(req,res)=>{
   res.json(chain);
 });
 
-app.get("/balance/:wallet", (req, res) => {
-  let wallet = req.params.wallet;
-  res.json({ balance: balances[wallet] || 0 });
+// balance
+app.get("/balance/:wallet",(req,res)=>{
+  res.json({balance:balances[req.params.wallet]||0});
 });
 
-app.get("/stats", (req, res) => {
+// stats
+app.get("/stats",(req,res)=>{
   res.json({
-    blocks: chain.length,
-    supply: totalSupply,
-    difficulty: DIFFICULTY
+    blocks:chain.length,
+    supply:totalSupply,
+    difficulty:DIFFICULTY
   });
 });
 
-app.listen(PORT, () => {
-  console.log("SofiaCoin blockchain running on port " + PORT);
+app.listen(PORT,()=>{
+  console.log("SofiaCoin REAL blockchain running on port",PORT);
 });
