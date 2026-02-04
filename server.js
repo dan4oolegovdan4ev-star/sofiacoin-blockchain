@@ -2,12 +2,10 @@ const express = require("express");
 const crypto = require("crypto");
 const cors = require("cors");
 const bodyParser = require("body-parser");
-const path = require("path");
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 3000;
 
@@ -27,9 +25,7 @@ function sha256(data) {
 
 function generateSeed() {
   const words = ["apple","moon","crypto","wolf","forest","sun","river","dragon","stone","king","hero","night","storm","fire","gold"];
-  let seed = [];
-  for(let i=0;i<12;i++) seed.push(words[Math.floor(Math.random()*words.length)]);
-  return seed.join(" ");
+  return Array.from({length:12},()=>words[Math.floor(Math.random()*words.length)]).join(" ");
 }
 
 function walletFromSeed(seed) {
@@ -39,12 +35,13 @@ function walletFromSeed(seed) {
 function createGenesisBlock() {
   return {index:0, prevHash:"0", timestamp:Date.now(), transactions:[], nonce:0, hash:sha256("genesis")};
 }
+
 chain.push(createGenesisBlock());
 
 function applyTransactions(txs) {
   for (let tx of txs) {
-    if (!balances[tx.from]) balances[tx.from] = 0;
-    if (!balances[tx.to]) balances[tx.to] = 0;
+    balances[tx.from] = balances[tx.from] || 0;
+    balances[tx.to] = balances[tx.to] || 0;
     if (tx.from !== "SYSTEM") balances[tx.from] -= tx.amount;
     balances[tx.to] += tx.amount;
   }
@@ -94,7 +91,7 @@ function mineBlock(miner) {
   return block;
 }
 
-// API
+// API ONLY
 app.get("/wallet", (req,res)=>{
   const seed = generateSeed();
   const wallet = walletFromSeed(seed);
@@ -130,6 +127,4 @@ app.get("/stats", (req,res)=>{
   });
 });
 
-app.get('*', (req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-
-app.listen(PORT, ()=>console.log("SofiaCoin LIVE on port",PORT));
+app.listen(PORT, ()=>console.log("SofiaCoin API running on port", PORT));
